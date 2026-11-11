@@ -55,23 +55,39 @@ class SwipeStart(unittest.TestCase):
         self.assertEqual(y, 0)
 
     def test_tap_on_the_move_is_a_tap(self):
-        # logged: the hand was crossing the screen and tapped on the way —
-        # 800 counts in a 100 ms press used to be played out as a flick
-        s, results = hold([(-70, 20)] * 12)
+        # recorded 2026-11-11: a tap while crossing the screen carries all its
+        # motion in the first reports, then the mouse stops dead
+        s, results = hold([(-480, -10), (-300, -5), (-200, -3), (-16, 0), (0, 0), (1, 0), (0, 0),
+                           (0, 0), (0, 0), (0, 0), (0, 0), (0, 0)])
         self.assertEqual(results, [])
         self.assertTrue(s.rolling)
         self.assertEqual(let_go(s)[0], "tap")
 
     def test_fast_tap_on_the_move_is_a_tap(self):
-        # logged: one 664-count report right after the press, then released
+        # one 664-count report right after the press, then released
         s, results = hold([(-664, -74)])
         self.assertEqual(results, [])
         self.assertEqual(let_go(s)[0], "tap")
 
+    def test_quick_swipe_on_the_move_begins_at_once(self):
+        # recorded 2026-11-11: pressed on the move and kept going — the swipe
+        # starts as soon as the travel after the press nudge is there, not
+        # after a fifth of a second
+        s, results = hold([(90, 5), (50, 3), (20, 1), (40, 2), (60, 3), (60, 2), (70, 4), (80, 3)])
+        self.assertEqual(results[0][0], "begin")
+        self.assertEqual(s.axis, "x")
+        self.assertEqual(let_go(s)[0], "end")
+
+    def test_swipe_carries_all_its_travel(self):
+        # the swipe hands the fingers everything since the settle window, so
+        # none of the hand's travel is lost before it begins
+        s, results = hold(STILL + [(30, 1)] * 4)
+        kind, x, _ = results[0]
+        self.assertEqual(kind, "begin")
+        self.assertEqual(x, 30 * 3 * s.cfg.gain)  # begins on the third report: all three carried
+
     def test_press_on_the_move_held_on_becomes_a_swipe(self):
-        s, results = hold([(-70, 20)] * 25)  # 200 ms: still a tap
-        self.assertEqual(results, [])
-        s, results = hold([(-70, 20)] * 40)  # 320 ms: the hold went on
+        s, results = hold([(-70, 20)] * 40)
         self.assertEqual(results[0][0], "begin")
         self.assertEqual(s.axis, "x")
         self.assertLess(results[0][1], 0)

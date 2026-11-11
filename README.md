@@ -269,10 +269,11 @@ Getting the start right matters: GNOME commits to workspaces (sideways) or
 overview (up/down) after about 0.4 mm of finger motion, so the direction is
 taken from where the hand is heading once the motion is clearly one way —
 not from the nudge of pressing the button, nor from a curved start
-(`mx4/swipe.py`). A quick flick that ends before the swipe would begin is
-still played out as a swipe — unless the mouse was already moving when the
-button went down: a short press on the move is a tap, since the hand was
-on its way somewhere and tapped on the way.
+(`mx4/swipe.py`). The first 30 ms of a press never decide anything: a tap
+made on the move carries all its motion there and then stops dead, while a
+swipe keeps moving. Travel after that window begins the swipe at once and
+the swipe carries all of it, so a quick flick lands like a slow push; one
+released before its direction was clear is still played out as a swipe.
 
 `[gestures]` keys:
 
@@ -280,7 +281,7 @@ on its way somewhere and tapped on the way.
 | --- | --- | --- |
 | `thumb_mode` | `touchpad` | `touchpad`; `keys` runs `left`/`right`/`up`/`down` on release; `off` leaves the button a plain button (the pointer keeps moving while it is held) |
 | `thumb_gain` | `1.5` | finger travel per unit of mouse travel — raise it if a workspace needs too long a push |
-| `thumb_start` | `100` | sensor counts of travel before a swipe begins (~2.5 mm at 1000 dpi) |
+| `thumb_start` | `80` | sensor counts of travel after the press nudge (the first 30 ms) before a swipe begins (~2 mm at 1000 dpi) |
 | `thumb_axis_lock` | `true` | once a swipe begins, ignore motion across it |
 | `thumb_fingers` | `auto` | `auto` is 4 on KDE Plasma (KWin's desktop swipes), 3 elsewhere |
 | `thumb_invert` | `false` | flip the direction (it otherwise follows your touchpad scroll-direction setting, like a real touchpad) |

@@ -96,7 +96,7 @@ DEFAULTS = {
         "thumb_mode": "touchpad",
         "thumb_fingers": "auto",  # auto: 4 on KDE Plasma, 3 elsewhere (GNOME)
         "thumb_gain": "1.5",  # virtual finger travel per sensor count
-        "thumb_start": "100",  # sensor counts of travel before a swipe begins
+        "thumb_start": "80",  # sensor counts of travel after the press nudge before a swipe begins
         "thumb_axis_lock": "true",  # once begun, ignore motion across the swipe
         "thumb_invert": "false",  # flip the swipe direction
     },
