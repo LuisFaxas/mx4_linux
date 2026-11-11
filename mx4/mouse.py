@@ -11,6 +11,8 @@ Feature map (from the device's own feature table):
   0x1B04 REPROG_CONTROLS_V4   fn 0x30 setCidReporting ← !HBH cid, flags, remap
                               event 0x00 → !4H CIDs currently pressed
   0x1004 UNIFIED_BATTERY      fn 0x10 status → [percent, level, charging-status]
+  0x2150 THUMBWHEEL           fn 0x20 setReporting ← [diverted, inverted]
+                              event 0x00 → !hHBB rotation, timestamp, status, flags
 """
 
 from __future__ import annotations
@@ -26,6 +28,7 @@ FEATURE_BATTERY = 0x1004
 FEATURE_NAME = 0x0005
 FEATURE_DPI = 0x2201
 FEATURE_SMARTSHIFT = 0x2111  # smart shift enhanced
+FEATURE_THUMBWHEEL = 0x2150
 
 WAVEFORMS = {
     "sharp_state_change": 0x00,
@@ -161,6 +164,22 @@ class MX4:
     def decode_raw_xy(payload: bytes) -> tuple[int, int]:
         """Decode a 0x1B04 event 0x10 payload into (dx, dy) sensor counts."""
         return struct.unpack("!hh", payload[:4])
+
+    # -- thumb wheel (0x2150) ----------------------------------------------------
+
+    def thumbwheel_feature_index(self) -> int:
+        return self.dev.feature_index(FEATURE_THUMBWHEEL)
+
+    def divert_thumbwheel(self, enable: bool = True) -> None:
+        """Diverted, the wheel stops scrolling sideways and reports its
+        rotation as HID++ events instead. Resets when the device reconnects."""
+        self.dev.call(FEATURE_THUMBWHEEL, 0x20, bytes([0x01 if enable else 0x00, 0x00]))
+
+    @staticmethod
+    def decode_thumbwheel(payload: bytes) -> tuple[int, int]:
+        """Decode a 0x2150 event 0x00 payload into (rotation, rotation status)."""
+        rotation, _timestamp, status = struct.unpack("!hHB", payload[:5])
+        return rotation, status
 
     # -- DPI (0x2201) ----------------------------------------------------------
 

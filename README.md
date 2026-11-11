@@ -291,6 +291,23 @@ virtual touchpad shows up in Settings → Mouse & Touchpad; turning touchpads
 off there turns the swipes off too. `mx4ctl daemon -v` logs one line per
 swipe and tap, handy when tuning.
 
+### Thumb wheel steps
+
+With `[thumbwheel] mode = actions` the thumb wheel stops scrolling sideways
+and runs an action once per step of rotation instead: by default the next
+or previous workspace, so a roll of the thumb walks through them (with the
+workspace tick, one buzz each). The first step of a turn comes after half a
+step, so a small roll answers at once; a quick flick jumps several. Shift +
+the main wheel still scrolls sideways in most apps.
+
+| key | default | |
+| --- | --- | --- |
+| `mode` | `scroll` | `scroll` (stock sideways scrolling) or `actions` |
+| `step` | `60` | rotation units per action; raise it to need a longer roll |
+| `first` | `30` | rotation units before the first action of a roll |
+| `next` / `prev` | `@workspace-next` / `@workspace-prev` | any action |
+| `invert` | `false` | swap next and prev |
+
 ### The actions ring
 
 `[menu]` entries are `label = command`, one round button each, laid out
@@ -349,6 +366,7 @@ and ours don't collide.
 | REPROG_CONTROLS_V4 | `0x1B04` | `0x30` setCidReporting `!HBH cid,flags,remap` (divert = flags `0x03`, +rawXY = `0x33`); event `0x00` = `!4H` CIDs down; event `0x10` = `!hh` raw dx,dy while a rawXY-diverted key is held (cursor freezes — the gesture mechanism) |
 | UNIFIED_BATTERY | `0x1004` | `0x10` status `[percent, level, charging-state]` |
 | ADJUSTABLE_DPI | `0x2201` | `0x10` dpi list (`0xE000+step` range encoding), `0x20` get `[sensor, dpi:2, default:2]`, `0x30` set `!BH sensor,dpi` |
+| THUMBWHEEL | `0x2150` | `0x20` setReporting `[diverted, inverted]`; event `0x00` `!hHBB` rotation, timestamp, status (1 start, 2 active, 3 stop), flags |
 | SMART_SHIFT_ENHANCED | `0x2111` | `0x10` get / `0x20` set `[mode, autoDisengage, torque]` — mode 1=freespin 2=ratchet, 0=leave unchanged |
 
 The thumb-panel button is CID `0x01A0` ("Haptic"). Diversion is temporary —

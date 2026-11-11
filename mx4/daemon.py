@@ -33,6 +33,7 @@ from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
 from . import cursor, hidpp, levels, ring, touchpad, uinput  # noqa: E402
 from .swipe import SwipeConfig, ThumbSwipe  # noqa: E402
+from .thumbwheel import WheelConfig, WheelSteps  # noqa: E402
 from .mouse import CONTROLS, MX4, parse_waveform  # noqa: E402
 
 DEFAULT_CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "mx4ctl" / "config.ini"
@@ -101,6 +102,16 @@ DEFAULTS = {
         "thumb_invert": "false",  # flip the swipe direction
     },
     "workspace": {"enabled": "true", "waveform": "whisper_collision"},
+    "thumbwheel": {
+        # "scroll": the wheel scrolls sideways (stock). "actions": it runs
+        # next / prev once per step of rotation — workspaces by default.
+        "mode": "scroll",
+        "step": "60",  # rotation units per action; raise it to need a longer turn
+        "first": "30",  # rotation units before the first action of a turn
+        "next": "@workspace-next",
+        "prev": "@workspace-prev",
+        "invert": "false",  # swap next and prev
+    },
 }
 
 
@@ -133,6 +144,11 @@ class Daemon:
         self.swipe_t0 = 0.0
         self.swipe_repress = 0
         self.long_armed = False  # long press reached; acts on release unless it swipes
+        self.wheel_idx = 0  # feature index of the thumb wheel while it is diverted
+        self.wheel: WheelSteps | None = None
+        if self.cfg["thumbwheel"]["mode"].strip().lower() == "actions":
+            w = self.cfg["thumbwheel"]
+            self.wheel = WheelSteps(WheelConfig(step=w.getint("step"), first=w.getint("first")))
         if self.thumb_mode == "touchpad":
             try:
                 self.touchpad = touchpad.VirtualTouchpad()
@@ -202,6 +218,12 @@ class Daemon:
             return False
         m = self.mouse
         self.ctl_idx = m.controls_feature_index()
+        if self.wheel:
+            try:
+                self.wheel_idx = m.thumbwheel_feature_index()
+            except hidpp.HidppError as e:
+                self.log(f"no thumb wheel to divert ({e}) — it keeps scrolling")
+                self.wheel = None
         self.apply_device_config()
         self.watch_id = GLib.io_add_watch(
             m.dev.channel.fd, GLib.PRIORITY_DEFAULT, GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, self._on_fd
@@ -224,6 +246,8 @@ class Daemon:
         m.divert(CONTROLS["haptic"], True, raw_xy=self.thumb_mode != "off")
         if self.cfg["gestures"].getboolean("enabled"):
             m.divert(CONTROLS["gesture"], True, raw_xy=True)
+        if self.wheel:
+            m.divert_thumbwheel(True)
         self.debug("buttons diverted, settings applied")
 
     def _reinit(self, attempt: int = 0) -> bool:
@@ -285,6 +309,8 @@ class Daemon:
             return
         if data[2] == self.ctl_idx and (data[3] >> 4) == 0x00:  # divertedButtonsEvent
             self._on_keys(MX4.decode_keys_down(data[4:]))
+        elif self.wheel and data[2] == self.wheel_idx and (data[3] >> 4) == 0x00:  # thumb wheel
+            self._on_thumbwheel(*MX4.decode_thumbwheel(data[4:]))
         elif data[2] == self.ctl_idx and (data[3] >> 4) == 0x01:  # divertedRawMouseXY
             if self.gesturing:
                 dx, dy = MX4.decode_raw_xy(data[4:])
@@ -327,6 +353,17 @@ class Daemon:
                 self.gesturing = False
                 self._on_gesture()
         self.keys_down = now_down
+
+    def _on_thumbwheel(self, rotation: int, status: int) -> None:
+        steps = self.wheel.feed(time.monotonic(), rotation, status)
+        if not steps:
+            return
+        w = self.cfg["thumbwheel"]
+        if w.getboolean("invert"):
+            steps = -steps
+        self.debug(f"thumb wheel: {'next' if steps > 0 else 'prev'} x{abs(steps)}")
+        for _ in range(abs(steps)):
+            self._do(w["next"] if steps > 0 else w["prev"])
 
     def _cancel_long_press(self) -> None:
         if self.long_timer:
@@ -689,6 +726,8 @@ class Daemon:
             self.mouse.divert(CONTROLS["haptic"], True, raw_xy=self.thumb_mode != "off")
             if self.cfg["gestures"].getboolean("enabled"):
                 self.mouse.divert(CONTROLS["gesture"], True, raw_xy=True)
+            if self.wheel:
+                self.mouse.divert_thumbwheel(True)
         except OSError:
             self._reconnect_later()
         except hidpp.HidppError as e:
@@ -739,6 +778,11 @@ class Daemon:
                 for name in ("haptic", "gesture"):
                     try:
                         self.mouse.divert(CONTROLS[name], False)
+                    except hidpp.HidppError:
+                        pass
+                if self.wheel:
+                    try:
+                        self.mouse.divert_thumbwheel(False)
                     except hidpp.HidppError:
                         pass
                 self.mouse.dev.channel.close()
