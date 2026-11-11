@@ -1,6 +1,6 @@
 {
   "uuid": "mx4ctl-cursor@mx4ctl",
   "name": "mx4ctl cursor",
-  "description": "Lets the mx4ctl daemon ask where the pointer is, so the actions ring can open at the cursor on GNOME/Wayland.",
+  "description": "Lets the mx4ctl daemon ask where the pointer is, so the actions ring can open at the cursor on GNOME/Wayland, and which app has focus, so copy and paste send the right keys.",
   "shell-version": ["45", "46", "47", "48", "49", "50", "51"]
 }

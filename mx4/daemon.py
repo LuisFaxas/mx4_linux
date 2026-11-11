@@ -31,7 +31,7 @@ gi.require_version("Gtk", "3.0")
 gi.require_version("Gdk", "3.0")
 from gi.repository import Gdk, Gio, GLib, Gtk  # noqa: E402
 
-from . import cursor, hidpp, levels, ring, touchpad, uinput  # noqa: E402
+from . import clipboard, cursor, hidpp, levels, ring, touchpad, uinput  # noqa: E402
 from .swipe import SwipeConfig, ThumbSwipe  # noqa: E402
 from .thumbwheel import WheelConfig, WheelSteps  # noqa: E402
 from .mouse import CONTROLS, MX4, parse_waveform  # noqa: E402
@@ -39,7 +39,8 @@ from .mouse import CONTROLS, MX4, parse_waveform  # noqa: E402
 DEFAULT_CONFIG = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "mx4ctl" / "config.ini"
 
 # "@name" actions in the config resolve per session type: key combos via
-# uinput (any compositor), or xdotool on X11 when uinput is unavailable
+# uinput (any compositor), or xdotool on X11 when uinput is unavailable.
+# @copy and @paste pick their keys from the focused app (mx4/clipboard.py).
 BUILTIN_KEYS = {
     "workspace-prev": (uinput.KEY_LEFTMETA, uinput.KEY_PAGEUP),
     "workspace-next": (uinput.KEY_LEFTMETA, uinput.KEY_PAGEDOWN),
@@ -57,6 +58,8 @@ BUILTIN_X11 = {
     "minimize": "xdotool getactivewindow windowminimize",
     "screenshot": "xdotool key Print",
     "play-pause": "xdotool key XF86AudioPlay",
+    "copy": "xdotool key ctrl+Insert",  # the pair that is safe in terminals too
+    "paste": "xdotool key shift+Insert",
 }
 
 SWIPE_GRACE_MS = 80  # a thumb re-press within this continues the swipe
@@ -102,6 +105,13 @@ DEFAULTS = {
         "thumb_invert": "false",  # flip the swipe direction
     },
     "workspace": {"enabled": "true", "waveform": "whisper_collision"},
+    # plain buttons that run an action when pressed (stock behaviour when
+    # empty): back, forward, smartshift, and gesture while [gestures] is off
+    "buttons": {"back": "", "forward": "", "smartshift": "", "gesture": "", "waveform": ""},
+    # @copy / @paste send the keys that suit the focused app (needs the
+    # mx4ctl-cursor extension on GNOME): app names, matched against the
+    # focused window's class and app id
+    "clipboard": {"terminals": clipboard.TERMINALS, "insert_apps": clipboard.INSERT_APPS},
     "thumbwheel": {
         # "scroll": the wheel scrolls sideways (stock). "actions": it runs
         # next / prev once per step of rotation — workspaces by default.
@@ -145,6 +155,7 @@ class Daemon:
         self.swipe_repress = 0
         self.long_armed = False  # long press reached; acts on release unless it swipes
         self.wheel_idx = 0  # feature index of the thumb wheel while it is diverted
+        self.button_actions = self._button_actions()  # cid → action for plain buttons
         self.wheel: WheelSteps | None = None
         if self.cfg["thumbwheel"]["mode"].strip().lower() == "actions":
             w = self.cfg["thumbwheel"]
@@ -248,6 +259,8 @@ class Daemon:
             m.divert(CONTROLS["gesture"], True, raw_xy=True)
         if self.wheel:
             m.divert_thumbwheel(True)
+        for cid in self.button_actions:
+            m.divert(cid, True)
         self.debug("buttons diverted, settings applied")
 
     def _reinit(self, attempt: int = 0) -> bool:
@@ -322,9 +335,25 @@ class Daemon:
                 elif self.thumb_swipe and self.long_timer and self._moved():
                     self._cancel_long_press()
 
+    def _button_actions(self) -> dict[int, str]:
+        actions = {}
+        for name in ("back", "forward", "smartshift", "gesture"):
+            action = self.cfg["buttons"][name].strip()
+            if not action:
+                continue
+            if name == "gesture" and self.cfg["gestures"].getboolean("enabled"):
+                self.log("[buttons] gesture ignored: [gestures] is on and owns the gesture button")
+                continue
+            actions[CONTROLS[name]] = action
+        return actions
+
     def _on_keys(self, now_down: set[int]) -> None:
         for cid in now_down - self.keys_down:
-            if cid == CONTROLS["haptic"] and self.lift_timer:
+            if cid in self.button_actions:
+                self.debug(f"button {cid:#06x}: {self.button_actions[cid]}")
+                self.play(self.cfg["buttons"]["waveform"].strip())
+                self._do(self.button_actions[cid])
+            elif cid == CONTROLS["haptic"] and self.lift_timer:
                 # the force panel dipped under its threshold mid-swipe: same swipe
                 GLib.source_remove(self.lift_timer)
                 self.lift_timer = 0
@@ -340,7 +369,9 @@ class Daemon:
                 self.gesturing = True
                 self.gest_x = self.gest_y = 0
         for cid in self.keys_down - now_down:
-            if cid == CONTROLS["haptic"]:
+            if cid in self.button_actions:
+                pass  # acted on press
+            elif cid == CONTROLS["haptic"]:
                 self.gesturing = self.thumb_swipe = False
                 if self.swipe:
                     self._thumb_release()
@@ -544,8 +575,13 @@ class Daemon:
 
     def _builtin(self, name: str) -> None:
         keys = BUILTIN_KEYS.get(name)
+        if name in ("copy", "paste"):
+            c = self.cfg["clipboard"]
+            focus = cursor.gnome_focus()
+            keys = clipboard.keys_for(name, focus, c["terminals"], c["insert_apps"])
+            self.debug(f"@{name} in {focus!r}: {clipboard.kind_for(focus, c['terminals'], c['insert_apps'])} keys")
         if keys is None:
-            self.log(f"unknown built-in action @{name} (known: {', '.join(sorted(BUILTIN_KEYS))})")
+            self.log(f"unknown built-in action @{name} (known: {', '.join(sorted([*BUILTIN_KEYS, 'copy', 'paste']))})")
             return
         if self.keyboard is None:
             try:
@@ -728,6 +764,8 @@ class Daemon:
                 self.mouse.divert(CONTROLS["gesture"], True, raw_xy=True)
             if self.wheel:
                 self.mouse.divert_thumbwheel(True)
+            for cid in self.button_actions:
+                self.mouse.divert(cid, True)
         except OSError:
             self._reconnect_later()
         except hidpp.HidppError as e:
@@ -783,6 +821,11 @@ class Daemon:
                 if self.wheel:
                     try:
                         self.mouse.divert_thumbwheel(False)
+                    except hidpp.HidppError:
+                        pass
+                for cid in self.button_actions:
+                    try:
+                        self.mouse.divert(cid, False)
                     except hidpp.HidppError:
                         pass
                 self.mouse.dev.channel.close()

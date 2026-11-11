@@ -308,6 +308,33 @@ the main wheel still scrolls sideways in most apps.
 | `next` / `prev` | `@workspace-next` / `@workspace-prev` | any action |
 | `invert` | `false` | swap next and prev |
 
+### Plain buttons, copy and paste
+
+`[buttons]` gives Back, Forward, the SmartShift button and (while
+`[gestures]` is off) the gesture button an action of their own, run when
+pressed; an empty value leaves the button stock. Leave alone any button
+another program diverts (for example a push-to-talk app).
+
+`@copy` and `@paste` send the keys that suit the focused app, which the
+mx4ctl-cursor GNOME extension reports:
+
+| focused app | copy | paste |
+| --- | --- | --- |
+| a terminal (`[clipboard] terminals`) | Ctrl+Shift+C | Ctrl+Shift+V |
+| an app with a terminal inside (`[clipboard] insert_apps`, VS Code) | Ctrl+Insert | Shift+Insert |
+| anything else | Ctrl+C | Ctrl+V |
+| unknown (extension not answering) | Ctrl+Insert | Shift+Insert |
+
+A plain Ctrl+C in a terminal would interrupt whatever is running, which is
+why terminals and VS Code never get it. App names match the focused
+window's class and app id (VS Code reports `com.microsoft.vscode`).
+
+```ini
+[buttons]
+gesture = @copy
+back = @paste
+```
+
 ### The actions ring
 
 `[menu]` entries are `label = command`, one round button each, laid out

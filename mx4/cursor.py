@@ -240,6 +240,20 @@ class KWinCursor:
         return int(round(x)), int(round(y))
 
 
+def gnome_focus(timeout_ms: int = 150) -> str | None:
+    """'wm-class app-id' of the focused window, lower case, from the
+    mx4ctl-cursor GNOME Shell extension; None when it doesn't answer."""
+    from gi.repository import Gio
+    try:
+        reply = Gio.DBusProxy.new_for_bus_sync(
+            Gio.BusType.SESSION, Gio.DBusProxyFlags.DO_NOT_LOAD_PROPERTIES, None,
+            BUS_NAME, OBJ_PATH, INTERFACE, None).call_sync(
+            "GetFocus", None, Gio.DBusCallFlags.NONE, timeout_ms, None)
+    except GLib.Error:
+        return None
+    return " ".join(reply.unpack()[0].split("\n")).lower()
+
+
 class GnomeCursor:
     """Pointer position from the mx4ctl-cursor GNOME Shell extension, over
     D-Bus. Same interface as KWinCursor; None when the extension isn't there."""
